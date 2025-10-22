@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "funasr>=1.2.7",
     "funasr-onnx>=0.4.1",
+    "jupyterlab>=4.4.9",
     "onnx==1.18.0",
     "torch==2.8.0",
     "torchaudio>=2.8.0",
