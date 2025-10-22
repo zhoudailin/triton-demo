@@ -4,7 +4,7 @@ LABEL author="zhoudailin"
 
 WORKDIR /root
 
-RUN pip3 install jupyterlab
+RUN pip3 install jupyterlab torchvision torchaudio onnx==1.18.0
 
 COPY jupyter_lab_config.py ~/.jupyter/jupyter_lab_config.py
 
