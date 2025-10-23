@@ -4,7 +4,9 @@ LABEL author="zhoudailin"
 
 WORKDIR /root
 
-RUN pip3 install funasr jupyterlab torchvision torchaudio
+COPY wheel wheel
+
+RUN pip3 install funasr jupyterlab torchvision torchaudio wheel/kaldifeat-1.25.5.dev20240914+cuda12.1.torch2.4.1-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 
 COPY jupyter_lab_config.py ~/.jupyter/jupyter_lab_config.py
 
