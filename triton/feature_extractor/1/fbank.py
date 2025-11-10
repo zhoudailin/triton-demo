@@ -8,6 +8,7 @@ class Fbank(torch.nn.Module):
     """
     包装为pytorch模块
     """
+
     def __init__(self, opts):
         super(Fbank, self).__init__()
         self.fbank = kaldifeat.Fbank(opts)

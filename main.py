@@ -10,7 +10,7 @@ print(wav, wav.shape, wav_lens, wav_lens.shape)
 
 inputs = [
     grpcclient.InferInput("wav", wav.shape, "FP32"),
-    grpcclient.InferInput("wav_lens", wav_lens.shape, "INT32")
+    grpcclient.InferInput("wav_lens", wav_lens.shape, "INT32"),
 ]
 inputs[0].set_data_from_numpy(wav)
 inputs[1].set_data_from_numpy(wav_lens)
@@ -23,7 +23,7 @@ response = client.infer(
     outputs=outputs,
     sequence_id=1234,
     sequence_start=True,
-    sequence_end=False
+    sequence_end=False,
 )
 speech = response.as_numpy("speech")
 print("Speech shape:", speech.shape)

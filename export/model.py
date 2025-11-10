@@ -7,7 +7,7 @@ from funasr_onnx import Paraformer
 # )
 # model.export(output_dir="model")
 model = Paraformer(
-    model_dir='iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online'
+    model_dir="iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online"
 )
-res = model('/home/mrzhou/Documents/codes/private/triton-demo/data/asr_example.wav')
+res = model("/home/mrzhou/Documents/codes/private/triton-demo/data/asr_example.wav")
 print(res)

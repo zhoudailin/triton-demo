@@ -2,7 +2,7 @@ FROM nvcr.io/nvidia/tritonserver:23.01-py3
 
 LABEL author="zhoudailin"
 
-WORKDIR /root
+WORKDIR /workspace
 
 COPY wheel wheel
 

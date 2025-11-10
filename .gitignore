@@ -11,3 +11,4 @@ wheels/
 .idea
 .vscode
 model
+.ipynb_checkpoints

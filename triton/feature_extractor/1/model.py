@@ -1,54 +1,53 @@
 import json
+from typing import Dict, List
+import os, sys, io
 import kaldifeat
 import triton_python_backend_utils as pb_utils
 import torch
 import yaml
+from torch import from_dlpack
 from fbank import Fbank
+
+os.environ["PYTHONIOENCODING"] = "utf-8"
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True)
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", line_buffering=True)
 
 
 class TritonPythonModel:
-    def __init__(self):
-        self.feature_extractor = None
-        self.opts = None
-        self.output_dtype = None
-        self.device = None
-        self.model_config = None
+    model_config: Dict
+    chunk_size: int
+    parameters: Dict
+    chunk_size_s: str
+    config_path: str
+    config: dict
 
     def initialize(self, args):
-        self.model_config = model_config = json.loads(args["model_config"])
+        self.model_config = json.loads(args["model_config"])
 
-        if args['model_instance_kind'] == 'GPU':
-            self.device = 'cuda'
-        else:
-            self.device = 'cpu'
+        self.parameters = {}
+        for param in self.model_config["parameters"].items():
+            key, value = param
+            value = value["string_value"]
+            self.parameters[key] = value
+        self.chunk_size_s = self.parameters["chunk_size_s"]
+        self.config_path = self.parameters["config_path"]
 
-        output_config = pb_utils.get_output_config_by_name(model_config, 'speech')
-        self.output_dtype = pb_utils.triton_string_to_numpy(output_config['data_type'])
+        with open(self.config_path, "r", encoding="utf-8") as f:
+            self.config = yaml.load(f, Loader=yaml.FullLoader)
 
-        parameters = self.model_config['parameters']
-        config_path = parameters['config_path']['string_value']
-        chunk_size_s = parameters['chunk_size_s']['string_value']
-
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-
-        opts = kaldifeat.FbankOptions()
-        opts.frame_opts.dither = 0.0  # 随机噪声
-        opts.frame_opts.window_type = config["frontend_conf"]["window"]  # 窗函数
-        opts.mel_opts.num_bins = int(config["frontend_conf"]["n_mels"])  # mel滤波器数量，决定了FBank特征维度，对于深度学习一般用80
-        opts.frame_opts.frame_shift_ms = float(config["frontend_conf"]["frame_shift"])  # 帧之间overlap
-        opts.frame_opts.frame_length_ms = float(config["frontend_conf"]["frame_length"])  # 帧长，决定了每个帧的持续时间，一般用25ms
-        opts.frame_opts.samp_freq = int(config["frontend_conf"]["fs"])  # 采样率，一般用16000Hz
-        opts.device = torch.device(self.device)
-        self.opts = opts
-        self.feature_extractor = Fbank(self.opts)
+        chunk_size_s = float(self.parameters["chunk_size_s"])
+        sample_rate = self.config["frontend_conf"]["fs"]
+        self.chunk_size = int(chunk_size_s * sample_rate)
+        print(chunk_size_s, sample_rate, self.chunk_size)
 
     def execute(self, requests):
-        pass
+        responses = []
+        for request in requests:
+            input0 = pb_utils.get_input_tensor_by_name(request, "wav")
+            print(input0, type(input0))
+            wav = from_dlpack(input0.to_dlpack())[0]
+            print(wav, type(wav), wav.shape)
+        return [1]
 
     def finalize(self):
-        pass
-
-
-if __name__ == '__main__':
-    model = TritonPythonModel()
+        print("finalize")
