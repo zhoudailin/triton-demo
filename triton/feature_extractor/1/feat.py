@@ -17,8 +17,8 @@ class Feat(object):
         self.audios = torch.cat((self.audios, audio))
 
     def get_seg_wav(self):
-        seg = self.wav[:]
-        self.wav = self.wav[-self.offset:]
+        seg = self.audios[:]
+        self.audios = self.audios[-self.offset:]
         return seg
 
     def add_frames(self, frames: torch.Tensor):

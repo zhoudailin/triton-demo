@@ -13,6 +13,6 @@ class LRUDict(OrderedDict):
     def __setitem__(self, key, value):
         if len(self) >= self.max_length:
             self.popitem(last=False)
-        else:
+        if key in self:
             self.move_to_end(key)
         super().__setitem__(key, value)

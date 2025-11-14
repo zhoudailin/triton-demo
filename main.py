@@ -24,4 +24,4 @@ response = client.infer(
     sequence_end=False,
 )
 speech = response.as_numpy("speech")
-print("Speech shape:", speech.shape)
+print("Speech shape:", speech, speech.shape)

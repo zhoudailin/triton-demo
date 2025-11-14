@@ -16,17 +16,17 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", line_bufferin
 
 class TritonPythonModel:
     model_config: Dict
-    chunk_size: int
+    chunk_size: float
     parameters: Dict
-    chunk_size_s: int
+    chunk_size_s: float
     config_path: str
     config: dict
     seq_feat: LRUDict
     opts: kaldifeat.FbankOptions
     feature_extractor: kaldifeat.Fbank
     frame_stride: float
-    offset_ms: int
-    sample_rate: int
+    offset_ms: float
+    sample_rate: float
     device: str
 
     def initialize(self, args):
@@ -38,7 +38,7 @@ class TritonPythonModel:
             key, value = param
             value = value["string_value"]
             self.parameters[key] = value
-        self.chunk_size_s = self.parameters["chunk_size_s"]
+        self.chunk_size_s = float(self.parameters["chunk_size_s"])
         self.config_path = self.parameters["config_path"]
         with open(self.config_path, "r", encoding="utf-8") as f:
             self.config = yaml.load(f, Loader=yaml.FullLoader)
@@ -62,13 +62,15 @@ class TritonPythonModel:
         frame_shift_ms = opts.frame_opts.frame_shift_ms
         frame_length_ms = opts.frame_opts.frame_length_ms
 
-        self.chunk_size = int(self.chunk_size_s * sample_rate)
+        print(f'-------------\n{self.chunk_size_s} {sample_rate}')
+        print(f'-------------\n{type(self.chunk_size_s)} {type(sample_rate)}')
+        self.chunk_size = self.chunk_size_s * sample_rate
         self.frame_stride = (self.chunk_size_s * 1000) // frame_shift_ms
         self.offset_ms = self.get_offset(frame_length_ms, frame_shift_ms)
         self.sample_rate = sample_rate
 
     @staticmethod
-    def get_offset(self, frame_length_ms, frame_shift_ms):
+    def get_offset(frame_length_ms, frame_shift_ms):
         offset_ms = 0
         while offset_ms + frame_shift_ms < frame_length_ms:
             offset_ms += frame_shift_ms
