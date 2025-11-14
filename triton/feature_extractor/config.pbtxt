@@ -66,11 +66,6 @@ input [
     name: "wav"
     data_type: TYPE_FP32
     dims: [-1]
-  },
-  {
-    name: "wav_lens"
-    data_type: TYPE_INT32
-    dims: [1]
   }
 ]
 

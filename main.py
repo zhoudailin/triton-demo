@@ -10,10 +10,8 @@ print(wav, wav.shape, wav_lens, wav_lens.shape)
 
 inputs = [
     grpcclient.InferInput("wav", wav.shape, "FP32"),
-    grpcclient.InferInput("wav_lens", wav_lens.shape, "INT32"),
 ]
 inputs[0].set_data_from_numpy(wav)
-inputs[1].set_data_from_numpy(wav_lens)
 
 outputs = [grpcclient.InferRequestedOutput("speech")]
 

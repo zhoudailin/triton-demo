@@ -1,12 +1,12 @@
 import json
 from typing import Dict, List
 import os, sys, io
-import kaldifeat
 import triton_python_backend_utils as pb_utils
 import torch
 import yaml
 from torch import from_dlpack
-from fbank import Fbank
+from lru_dict import LRUDict
+from feat import Feat
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True)
@@ -20,6 +20,7 @@ class TritonPythonModel:
     chunk_size_s: str
     config_path: str
     config: dict
+    seq_feat: LRUDict
 
     def initialize(self, args):
         self.model_config = json.loads(args["model_config"])
@@ -31,6 +32,8 @@ class TritonPythonModel:
             self.parameters[key] = value
         self.chunk_size_s = self.parameters["chunk_size_s"]
         self.config_path = self.parameters["config_path"]
+
+        self.seq_feat = LRUDict(1024)
 
         with open(self.config_path, "r", encoding="utf-8") as f:
             self.config = yaml.load(f, Loader=yaml.FullLoader)
@@ -47,7 +50,34 @@ class TritonPythonModel:
             print(input0, type(input0))
             wav = from_dlpack(input0.to_dlpack())[0]
             print(wav, type(wav), wav.shape)
-        return [1]
+            wav_len = len(wav)
+            if wav_len < self.chunk_size:
+                temp = torch.zeros(
+                    self.chunk_size, dtype=torch.float32, device=self.device
+                )
+                temp[0:wav_len] = wav[:]
+                wav = temp
+
+            in_start = pb_utils.get_input_tensor_by_name(request, "START")
+            start = in_start.as_numpy()[0][0]
+            in_ready = pb_utils.get_input_tensor_by_name(request, "READY")
+            ready = in_ready.as_numpy()[0][0]
+            in_corrid = pb_utils.get_input_tensor_by_name(request, "CORRID")
+            corrid = in_corrid.as_numpy()[0][0]
+            in_end = pb_utils.get_input_tensor_by_name(request, "END")
+            end = in_end.as_numpy()[0][0]
+
+            if start:
+                self.seq_feat[corrid] = Feat(
+                    corrid,
+                    self.offset_ms,
+                    self.sample_rate,
+                    self.frame_stride,
+                    self.device,
+                )
+
+        response = pb_utils.InferenceResponse(output_tensors=torch.tensor([1, 2, 3]))
+        return [response]
 
     def finalize(self):
         print("finalize")
