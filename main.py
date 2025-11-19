@@ -15,7 +15,8 @@ inputs[0].set_data_from_numpy(wav)
 
 outputs = [
     grpcclient.InferRequestedOutput("enc"),
-    grpcclient.InferRequestedOutput("enc_len")
+    grpcclient.InferRequestedOutput("enc_len"),
+    grpcclient.InferRequestedOutput("alphas")
 ]
 
 response = client.infer(
@@ -30,6 +31,6 @@ response = client.infer(
 enc = response.as_numpy("enc")
 enc_len = response.as_numpy("enc_len")
 alphas = response.as_numpy("alphas")
-print(enc, enc.shape)
-print(enc_len, enc_len.shape)
-print(alphas, alphas.shape)
+print('enc: ', enc, enc.shape)
+print('enc_len: ', enc_len, enc_len.shape)
+print('alphas: ', alphas, alphas.shape)
