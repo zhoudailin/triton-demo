@@ -82,7 +82,7 @@ class TritonPythonModel:
         batch_seqid = []
         end_seqid = {}
         for request in requests:
-            input0 = pb_utils.get_input_tensor_by_name(request, "wav")
+            input0 = pb_utils.get_input_tensor_by_name(request, "WAV")
             print(input0, type(input0))
             wav = from_dlpack(input0.to_dlpack())[0]
             print(wav, type(wav), wav.shape)

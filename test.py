@@ -1,39 +1,29 @@
-import numpy as np
-import torch
-from kaldifeat import Fbank, FbankOptions
-import wave
+from funasr import AutoModel
 
+chunk_size = [0, 10, 5]  # [0, 10, 5] 600ms, [0, 8, 4] 480ms
+encoder_chunk_look_back = 4  # number of chunks to lookback for encoder self-attention
+decoder_chunk_look_back = 1  # number of encoder chunks to lookback for decoder cross-attention
 
-def read_pcm_wave(file_path):
-    with wave.open(file_path, "rb") as wav_file:
-        # 获取文件的基本信息
-        n_channels = wav_file.getnchannels()  # 声道数
-        sample_width = wav_file.getsampwidth()  # 采样宽度（字节数）
-        frame_rate = wav_file.getframerate()  # 采样率（帧率）
-        n_frames = wav_file.getnframes()  # 总帧数
+model = AutoModel(model="paraformer-zh-streaming", model_revision="v2.0.4")
 
-        # 读取所有音频数据（作为字节流）
-        pcm_data = wav_file.readframes(n_frames)
+import soundfile
+import os
 
-        # 将字节流转换为 numpy 数组
-        pcm_array = np.frombuffer(pcm_data, dtype=np.int16)  # 根据采样宽度调整数据类型
+wav_file = os.path.join(model.model_path, "example/asr_example.wav")
+speech, sample_rate = soundfile.read(wav_file)
+chunk_stride = chunk_size[1] * 960  # 600ms
 
-        # 如果是立体声（2个声道），我们需要对数据进行重新排列
-        if n_channels == 2:
-            pcm_array = pcm_array.reshape((-1, 2))  # 每一对数值是左右声道的 PCM 数据
-
-        return pcm_array, frame_rate
-
-
-pcm, frame_rate = read_pcm_wave("data/asr_example.wav")
-opts = FbankOptions()
-opts.frame_opts.dither = 0.0
-opts.frame_opts.window_type = "hamming"
-opts.mel_opts.num_bins = 80
-opts.frame_opts.frame_shift_ms = 10
-opts.frame_opts.frame_length_ms = 25
-opts.frame_opts.samp_freq = 16000
-opts.device = torch.device("cuda")
-f = Fbank(opts)
-fbank = f(torch.tensor(pcm, dtype=torch.float32).to("cuda"))
-print(pcm.shape, fbank, fbank.shape)
+cache = {}
+total_chunk_num = int(len((speech) - 1) / chunk_stride + 1)
+for i in range(total_chunk_num):
+    speech_chunk = speech[i * chunk_stride:(i + 1) * chunk_stride]
+    is_final = i == total_chunk_num - 1
+    res = model.generate(
+        input=speech_chunk,
+        cache=cache,
+        is_final=is_final,
+        chunk_size=chunk_size,
+        encoder_chunk_look_back=encoder_chunk_look_back,
+        decoder_chunk_look_back=decoder_chunk_look_back
+    )
+    print(res)
