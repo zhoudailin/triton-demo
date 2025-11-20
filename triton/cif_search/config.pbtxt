@@ -56,7 +56,7 @@ parameters [
   },
   {
     key: "FORCE_CPU_ONLY_INPUT_TENSORS"
-    value: { string_value: "yes" }
+    value: { string_value: "no" }
   }
 ]
 

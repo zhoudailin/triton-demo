@@ -1,10 +1,11 @@
-import triton_python_backend_utils as pb_utils
-import numpy as np
-from torch.utils.dlpack import from_dlpack
-import json
-import yaml
 import asyncio
+import json
 from collections import OrderedDict
+
+import numpy as np
+import triton_python_backend_utils as pb_utils
+import yaml
+from torch.utils.dlpack import from_dlpack
 
 
 class LimitedDict(OrderedDict):
@@ -124,11 +125,19 @@ class TritonPythonModel:
                 self.vocab_dict = self.load_vocab(value)
 
     def load_vocab(self, vocab_file):
-        with open(str(vocab_file), "rb") as f:
-            config = yaml.load(f, Loader=yaml.Loader)
-        return config["token_list"]
+        print(f"Loading vocab from: {vocab_file}")
+        try:
+            with open(str(vocab_file), "rb") as f:
+                config = yaml.load(f, Loader=yaml.Loader)
+            vocab_list = config["token_list"]
+            print(f"Loaded vocab with {len(vocab_list)} tokens")
+            return vocab_list
+        except Exception as e:
+            print(f"Error loading vocab: {e}")
+            return {}
 
     async def execute(self, requests):
+        print(f"CIF Search execute: received {len(requests)} requests")
         batch_end = []
         responses = []
         batch_corrid = []
@@ -138,11 +147,11 @@ class TritonPythonModel:
 
         for request in requests:
             hidden = pb_utils.get_input_tensor_by_name(request, "enc")
-            hidden = from_dlpack(hidden.to_dlpack()).cpu().numpy()
+            hidden = hidden.as_numpy()
             alphas = pb_utils.get_input_tensor_by_name(request, "alphas")
-            alphas = from_dlpack(alphas.to_dlpack()).cpu().numpy()
+            alphas = alphas.as_numpy()
             hidden_len = pb_utils.get_input_tensor_by_name(request, "enc_len")
-            hidden_len = from_dlpack(hidden_len.to_dlpack()).cpu().numpy()
+            hidden_len = hidden_len.as_numpy()
 
             in_start = pb_utils.get_input_tensor_by_name(request, "START")
             start = in_start.as_numpy()[0][0]
@@ -159,54 +168,85 @@ class TritonPythonModel:
             if start:
                 self.cif_search_cache[corrid] = CIFSearch()
                 self.start[corrid] = 1
-            if end:
+            if end and corrid in self.cif_search_cache:
                 self.cif_search_cache[corrid].cache["last_chunk"] = True
 
-            acoustic, acoustic_len = self.cif_search_cache[corrid].infer(hidden, alphas)
-            batch_result[corrid] = ""
-            if acoustic.shape[1] == 0:
+            try:
+                acoustic, acoustic_len = self.cif_search_cache[corrid].infer(hidden, alphas)
+                batch_result[corrid] = ""
+                if acoustic.shape[1] == 0:
+                    continue
+            except Exception as e:
+                print(f"CIF inference error for corrid {corrid}: {e}")
+                batch_result[corrid] = ""
                 continue
+
+            qualified_corrid.append(corrid)
+            # 修复数据类型和形状问题
+            input_tensor0 = pb_utils.Tensor("enc", hidden.astype(np.float32))
+            # hidden_len已经是标量，直接使用
+            input_tensor1 = pb_utils.Tensor("enc_len", hidden_len.astype(np.int32))
+            input_tensor2 = pb_utils.Tensor("acoustic_embeds", acoustic.astype(np.float32))
+            input_tensor3 = pb_utils.Tensor(
+                "acoustic_embeds_len", acoustic_len.astype(np.int32)
+            )
+            input_tensors = [input_tensor0, input_tensor1, input_tensor2, input_tensor3]
+
+            if self.start[corrid] and end:
+                flag = 3
+            elif end:
+                flag = 2
+            elif self.start[corrid]:
+                flag = 1
+                self.start[corrid] = 0
             else:
-                qualified_corrid.append(corrid)
-                input_tensor0 = pb_utils.Tensor("enc", hidden)
-                input_tensor1 = pb_utils.Tensor("enc_len", np.array([hidden_len], dtype=np.int32))
-                input_tensor2 = pb_utils.Tensor("acoustic_embeds", acoustic)
-                input_tensor3 = pb_utils.Tensor(
-                    "acoustic_embeds_len", np.array([acoustic_len], dtype=np.int32)
-                )
-                input_tensors = [input_tensor0, input_tensor1, input_tensor2, input_tensor3]
+                flag = 0
 
-                if self.start[corrid] and end:
-                    flag = 3
-                elif end:
-                    flag = 2
-                elif self.start[corrid]:
-                    flag = 1
-                    self.start[corrid] = 0
-                else:
-                    flag = 0
-                inference_request = pb_utils.InferenceRequest(
-                    model_name="decoder",
-                    requested_output_names=["sample_ids"],
-                    inputs=input_tensors,
-                    request_id="",
-                    correlation_id=corrid,
-                    flags=flag,
-                )
-                inference_response_awaits.append(inference_request.async_exec())
+            inference_request = pb_utils.InferenceRequest(
+                model_name="decoder",
+                requested_output_names=["sample_ids"],
+                inputs=input_tensors,
+                request_id="",
+                correlation_id=corrid,
+                flags=flag,
+            )
+            inference_response_awaits.append(inference_request.async_exec())
 
-        inference_responses = await asyncio.gather(*inference_response_awaits)
+        inference_responses = []
+        if inference_response_awaits:
+            # 修复异步调用问题
+            for i, future in enumerate(inference_response_awaits):
+                try:
+                    response = await future
+                    if response.has_error():
+                        print(f"Inference failed for qualified_corrid[{i}] {qualified_corrid[i]}: {response.error().message()}")
+                        inference_responses.append(None)
+                    else:
+                        inference_responses.append(response)
+                except Exception as e:
+                    print(f"Async inference error for qualified_corrid[{i}] {qualified_corrid[i]}: {e}")
+                    inference_responses.append(None)
 
         for index_corrid, inference_response in zip(qualified_corrid, inference_responses):
-            if inference_response.has_error():
-                raise pb_utils.TritonModelException(inference_response.error().message())
-            else:
+            if inference_response is None:
+                print(f"Skipping corrid {index_corrid} due to inference failure")
+                continue
+
+            try:
                 sample_ids = pb_utils.get_output_tensor_by_name(inference_response, "sample_ids")
                 token_ids = sample_ids.as_numpy()[0]
-
-                # Change integer-ids to tokens
-                tokens = [self.vocab_dict[token_id] for token_id in token_ids]
+                # 确保token_ids在词汇表范围内
+                tokens = []
+                for token_id in token_ids:
+                    if int(token_id) in self.vocab_dict:
+                        tokens.append(self.vocab_dict[int(token_id)])
+                    else:
+                        print(f"Warning: token_id {token_id} not in vocab")
                 batch_result[index_corrid] = "".join(tokens)
+                print(f"Generated text for corrid {index_corrid}: {batch_result[index_corrid]}")
+            except Exception as e:
+                print(f"Error processing inference response for corrid {index_corrid}: {e}")
+                continue
 
         for i, index_corrid in enumerate(batch_corrid):
             sent = np.array([batch_result[index_corrid]])

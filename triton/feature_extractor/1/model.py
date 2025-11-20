@@ -84,7 +84,8 @@ class TritonPythonModel:
         for request in requests:
             input0 = pb_utils.get_input_tensor_by_name(request, "wav")
             print(input0, type(input0))
-            wav = from_dlpack(input0.to_dlpack())[0]
+            # Fix memory management issue: directly get numpy without DLPack conversion
+            wav = torch.from_numpy(input0.as_numpy())[0]
             print(wav, type(wav), wav.shape)
             wav_len = len(wav)
             if wav_len < self.chunk_size:
@@ -117,7 +118,8 @@ class TritonPythonModel:
             if end:
                 end_seqid[corrid] = 1
             wav = self.seq_feat[corrid].get_seg_wav() * 32768
-            total_waves.append(wav)
+            # Ensure tensor is moved to CPU for memory safety
+            total_waves.append(wav.cpu() if wav.is_cuda else wav)
         features = self.feature_extractor(total_waves)
         for corrid, frames in zip(batch_seqid, features):
             self.seq_feat[corrid].add_frames(frames)
