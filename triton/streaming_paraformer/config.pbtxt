@@ -12,19 +12,9 @@ input [
 
 output [
   {
-    name: "enc"
-    data_type: TYPE_FP32
-    dims: [-1, 512]
-  },
-  {
-    name: "enc_len"
-    data_type: TYPE_INT32
+    name: "transcripts"
+    data_type: TYPE_STRING
     dims: [1]
-  },
-  {
-    name: "alphas"
-    data_type: TYPE_FP32
-    dims: [-1]
   }
 ]
 
@@ -80,6 +70,26 @@ ensemble_scheduling {
       output_map {
         key: "alphas"
         value: "alphas"
+      }
+    },
+    {
+      model_name: "cif_search"
+      model_version: -1
+      input_map {
+        key: "enc"
+        value: "enc"
+      }
+      input_map{
+        key: "enc_len"
+        value: "enc_len"
+      }
+      input_map{
+        key: "alphas"
+        value: "alphas"
+      }
+      output_map {
+        key: "transcripts"
+        value: "transcripts"
       }
     }
   ]
