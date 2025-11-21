@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/tritonserver:23.01-py3
+FROM nvcr.io/nvidia/tritonserver:23.10-py3
 
 LABEL author="zhoudailin"
 
