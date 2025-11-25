@@ -1,13 +1,15 @@
 import json
-from typing import Dict, List
 import os, sys, io
-import triton_python_backend_utils as pb_utils
 import torch
 import yaml
-from torch import from_dlpack
+
+from typing import Dict
 from lru_dict import LRUDict
 from feat import Feat
-import kaldifeat
+
+import numpy as np
+import kaldi_native_fbank as knf
+import triton_python_backend_utils as pb_utils
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True)
@@ -22,14 +24,14 @@ class TritonPythonModel:
     config_path: str
     config: dict
     seq_feat: LRUDict
-    opts: kaldifeat.FbankOptions
-    feature_extractor: kaldifeat.Fbank
+    opts: knf.FbankOptions
+    fbank: knf.OnlineFbank
     frame_stride: float
     offset_ms: float
     sample_rate: float
-    device: str
 
     def initialize(self, args):
+        print('args: ', args)
         self.model_config = json.loads(args["model_config"])
         output0_config = pb_utils.get_output_config_by_name(self.model_config, "speech")
 
@@ -44,17 +46,16 @@ class TritonPythonModel:
             self.config = yaml.load(f, Loader=yaml.FullLoader)
         self.feature_size = output0_config["dims"][-1]
         self.decoding_window = output0_config["dims"][-2]
-        opts = kaldifeat.FbankOptions()
+
+        opts = knf.FbankOptions()
         opts.frame_opts.dither = 0.0  # 随机噪声
         opts.frame_opts.window_type = self.config["frontend_conf"]["window"]  # 窗函数
         opts.mel_opts.num_bins = int(self.config["frontend_conf"]["n_mels"])  # 梅尔频带数
         opts.frame_opts.frame_shift_ms = float(self.config["frontend_conf"]["frame_shift"])  # 帧位移
         opts.frame_opts.frame_length_ms = float(self.config["frontend_conf"]["frame_length"])  # 帧长度
         opts.frame_opts.samp_freq = int(self.config["frontend_conf"]["fs"])  # 帧率
-        opts.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.opts = opts
-        self.feature_extractor = kaldifeat.Fbank(self.opts)
+        self.fbank = knf.OnlineFbank(self.opts)
 
         self.seq_feat = LRUDict(1024)
 
@@ -83,9 +84,8 @@ class TritonPythonModel:
         end_seqid = {}
         for request in requests:
             input0 = pb_utils.get_input_tensor_by_name(request, "wav")
-            print(input0, type(input0))
-            # Fix memory management issue: directly get numpy without DLPack conversion
-            wav = torch.from_numpy(input0.as_numpy())[0]
+            print('----------input0:', input0, type(input0))
+            wav = input0.as_numpy()
             print(wav, type(wav), wav.shape)
             wav_len = len(wav)
             if wav_len < self.chunk_size:
@@ -109,8 +109,7 @@ class TritonPythonModel:
                     corrid,
                     self.offset_ms,
                     self.sample_rate,
-                    self.frame_stride,
-                    self.device,
+                    self.frame_stride
                 )
             if ready:
                 self.seq_feat[corrid].add_audio(wav)
@@ -118,9 +117,8 @@ class TritonPythonModel:
             if end:
                 end_seqid[corrid] = 1
             wav = self.seq_feat[corrid].get_seg_wav() * 32768
-            # Ensure tensor is moved to CPU for memory safety
             total_waves.append(wav.cpu() if wav.is_cuda else wav)
-        features = self.feature_extractor(total_waves)
+        self.fbank.accept_waveform(16000, total_waves)
         for corrid, frames in zip(batch_seqid, features):
             self.seq_feat[corrid].add_frames(frames)
             speech = self.seq_feat[corrid].get_frames(self.decoding_window)

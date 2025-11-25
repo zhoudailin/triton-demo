@@ -2,18 +2,16 @@ import torch
 
 
 class Feat(object):
-    def __init__(self, corrid, offset_ms, sample_rate, frame_stride, device="cpu"):
+    def __init__(self, corrid, offset_ms, sample_rate, frame_stride):
         self.corrid = corrid
         self.sample_rate = sample_rate
-        self.audios: torch.Tensor = torch.tensor([], device=device)
+        self.audios: torch.Tensor = torch.tensor([])
         self.offset = int(offset_ms / 1000 * sample_rate)
         self.frames = None
         self.frame_stride = int(frame_stride)
-        self.device = device
         self.lfr_m = 7
 
     def add_audio(self, audio: torch.Tensor):
-        audio = audio.to(self.device)
         self.audios = torch.cat((self.audios, audio))
 
     def get_seg_wav(self):

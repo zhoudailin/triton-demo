@@ -1,6 +1,6 @@
 from typing import List
 
-import kaldifeat
+import kaldi_native_fbank as knf
 import torch
 
 
@@ -11,7 +11,7 @@ class Fbank(torch.nn.Module):
 
     def __init__(self, opts):
         super(Fbank, self).__init__()
-        self.fbank = kaldifeat.Fbank(opts)
+        self.fbank = knf.OnlineFbank(opts)
 
     def forward(self, waves: List[torch.Tensor]):
-        return self.fbank(waves)
+        return self.fbank.accept_waveform(16000,waves)
