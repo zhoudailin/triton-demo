@@ -1,6 +1,6 @@
 name: "streaming_paraformer"
 platform: "ensemble"
-max_batch_size: 128 #MAX_BATCH
+max_batch_size: 128
 
 input [
   {
@@ -12,9 +12,9 @@ input [
 
 output [
   {
-    name: "transcripts"
-    data_type: TYPE_STRING
-    dims: [1]
+    name: "speech"
+    data_type: TYPE_FP32
+    dims: [61, 80]
   }
 ]
 
@@ -31,66 +31,66 @@ ensemble_scheduling {
         key: "speech"
         value: "speech"
       }
-    },
-    {
-      model_name: "lfr_cmvn_pe"
-      model_version: -1
-      input_map {
-        key: "chunk_xs"
-        value: "speech"
-      }
-      output_map {
-        key: "chunk_xs_out"
-        value: "chunk_xs_out"
-      }
-      output_map {
-        key: "chunk_xs_out_len"
-        value: "chunk_xs_out_len"
-      }
-    },
-    {
-      model_name: "encoder"
-      model_version: -1
-      input_map {
-        key: "speech"
-        value: "chunk_xs_out"
-      }
-      input_map {
-        key: "speech_lengths"
-        value: "chunk_xs_out_len"
-      }
-      output_map {
-        key: "enc"
-        value: "enc"
-      }
-      output_map {
-        key: "enc_len"
-        value: "enc_len"
-      }
-      output_map {
-        key: "alphas"
-        value: "alphas"
-      }
-    },
-    {
-      model_name: "cif_search"
-      model_version: -1
-      input_map {
-        key: "enc"
-        value: "enc"
-      }
-      input_map{
-        key: "enc_len"
-        value: "enc_len"
-      }
-      input_map{
-        key: "alphas"
-        value: "alphas"
-      }
-      output_map {
-        key: "transcripts"
-        value: "transcripts"
-      }
     }
+    #    {
+    #      model_name: "lfr_cmvn_pe"
+    #      model_version: -1
+    #      input_map {
+    #        key: "chunk_xs"
+    #        value: "speech"
+    #      }
+    #      output_map {
+    #        key: "chunk_xs_out"
+    #        value: "chunk_xs_out"
+    #      }
+    #      output_map {
+    #        key: "chunk_xs_out_len"
+    #        value: "chunk_xs_out_len"
+    #      }
+    #    },
+    #    {
+    #      model_name: "encoder"
+    #      model_version: -1
+    #      input_map {
+    #        key: "speech"
+    #        value: "chunk_xs_out"
+    #      }
+    #      input_map {
+    #        key: "speech_lengths"
+    #        value: "chunk_xs_out_len"
+    #      }
+    #      output_map {
+    #        key: "enc"
+    #        value: "enc"
+    #      }
+    #      output_map {
+    #        key: "enc_len"
+    #        value: "enc_len"
+    #      }
+    #      output_map {
+    #        key: "alphas"
+    #        value: "alphas"
+    #      }
+    #    },
+    #    {
+    #      model_name: "cif_search"
+    #      model_version: -1
+    #      input_map {
+    #        key: "enc"
+    #        value: "enc"
+    #      }
+    #      input_map{
+    #        key: "enc_len"
+    #        value: "enc_len"
+    #      }
+    #      input_map{
+    #        key: "alphas"
+    #        value: "alphas"
+    #      }
+    #      output_map {
+    #        key: "transcripts"
+    #        value: "transcripts"
+    #      }
+    #    }
   ]
 }

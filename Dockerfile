@@ -4,10 +4,9 @@ LABEL author="zhoudailin"
 
 WORKDIR /workspace
 
-COPY wheel wheel
 COPY triton model
 
-RUN pip3 install funasr jupyterlab torchvision torchaudio wheel/kaldifeat-1.25.5.dev20250203+cuda12.4.torch2.5.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+RUN pip3 install jupyterlab kaldi-native-fbank
 
 COPY jupyter_lab_config.py ~/.jupyter/jupyter_lab_config.py
 

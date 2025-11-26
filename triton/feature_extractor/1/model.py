@@ -1,11 +1,11 @@
 import json
+import math
 import os, sys, io
-import torch
 import yaml
 
 from typing import Dict
 from lru_dict import LRUDict
-from feat import Feat
+from featstream import Feat, FeatStream
 
 import numpy as np
 import kaldi_native_fbank as knf
@@ -29,65 +29,39 @@ class TritonPythonModel:
     frame_stride: float
     offset_ms: float
     sample_rate: float
+    seq_states: Dict[str, FeatStream]
 
     def initialize(self, args):
         self.model_config = json.loads(args["model_config"])
-        output0_config = pb_utils.get_output_config_by_name(self.model_config, "speech")
+        chunk_size_s = 0.6
 
-        self.parameters = {}
-        for param in self.model_config["parameters"].items():
-            key, value = param
-            value = value["string_value"]
-            self.parameters[key] = value
-        self.chunk_size_s = float(self.parameters["chunk_size_s"])
-        self.config_path = self.parameters["config_path"]
-
-        with open(self.config_path, "r", encoding="utf-8") as f:
-            self.config = yaml.load(f, Loader=yaml.FullLoader)
-
-        self.feature_size = output0_config["dims"][-1]
-        self.decoding_window = output0_config["dims"][-2]
-
-        frontend_conf = self.config["frontend_conf"]
         opts = knf.FbankOptions()
         opts.frame_opts.dither = 0.0
-        opts.frame_opts.window_type = frontend_conf["window"]  # 窗函数
-        opts.mel_opts.num_bins = int(frontend_conf["n_mels"])  # 梅尔频带数
-        opts.frame_opts.frame_shift_ms = float(frontend_conf["frame_shift"])  # 帧位移
-        opts.frame_opts.frame_length_ms = float(frontend_conf["frame_length"])  # 帧长度
-        opts.frame_opts.samp_freq = int(frontend_conf["fs"])  # 帧率
+        opts.frame_opts.samp_freq = 16000
+        opts.frame_opts.window_type = 'hamming'
+        opts.mel_opts.num_bins = 80
+        opts.frame_opts.frame_length_ms = 25
+        opts.frame_opts.frame_shift_ms = 10
         self.opts = opts
-        self.fbank = knf.OnlineFbank(self.opts)
+        self.fbank = knf.OnlineFbank(opts)
 
-        self.seq_feat = LRUDict(1024)
+        self.seq_feat = LRUDict(256)
 
         sample_rate = opts.frame_opts.samp_freq
         frame_shift_ms = opts.frame_opts.frame_shift_ms
         frame_length_ms = opts.frame_opts.frame_length_ms
 
-        print(f'-------------\n{self.chunk_size_s} {sample_rate}')
-        print(f'-------------\n{type(self.chunk_size_s)} {type(sample_rate)}')
-        self.chunk_size = int(self.chunk_size_s * sample_rate)
+        self.chunk_size = int(chunk_size_s * opts.frame_opts.samp_freq)
         self.frame_stride = (self.chunk_size_s * 1000) // frame_shift_ms
-        self.offset_ms = self.get_offset(frame_length_ms, frame_shift_ms)
+        self.offset_ms = math.ceil((frame_length_ms - frame_shift_ms) / frame_shift_ms) * frame_shift_ms
         self.sample_rate = sample_rate
-
-    @staticmethod
-    def get_offset(frame_length_ms, frame_shift_ms):
-        offset_ms = 0
-        while offset_ms + frame_shift_ms < frame_length_ms:
-            offset_ms += frame_shift_ms
-        return offset_ms
 
     def execute(self, requests):
         responses = []
-        total_waves = np.array([])
-        batch_seqid = []
-        end_seqid = {}
         for request in requests:
-            input0 = pb_utils.get_input_tensor_by_name(request, "wav")
-            print('----------input0:', input0, type(input0))
-            wav = input0.as_numpy()[0]
+            input_wav = pb_utils.get_input_tensor_by_name(request, "wav")
+            print('input_wav: ', input_wav, type(input_wav))
+            wav = input_wav.as_numpy().astype(np.float32)
             print(wav, type(wav), wav.shape)
             wav_len = len(wav)
             if wav_len < self.chunk_size:
@@ -95,40 +69,56 @@ class TritonPythonModel:
                 temp[0:wav_len] = wav[:]
                 wav = temp
 
-            in_start = pb_utils.get_input_tensor_by_name(request, "START")
-            start = in_start.as_numpy()[0][0]
-            in_ready = pb_utils.get_input_tensor_by_name(request, "READY")
-            ready = in_ready.as_numpy()[0][0]
-            in_corrid = pb_utils.get_input_tensor_by_name(request, "CORRID")
-            corrid = in_corrid.as_numpy()[0][0]
-            in_end = pb_utils.get_input_tensor_by_name(request, "END")
-            end = in_end.as_numpy()[0][0]
+            # 状态维护
+            start = pb_utils.get_input_tensor_by_name(request, "START").as_numpy()[0][0]
+            ready = pb_utils.get_input_tensor_by_name(request, "READY").as_numpy()[0][0]
+            corrid = pb_utils.get_input_tensor_by_name(request, "CORRID").as_numpy()[0][0]
+            end = pb_utils.get_input_tensor_by_name(request, "END").as_numpy()[0][0]
 
             if start:
-                self.seq_feat[corrid] = Feat(
-                    corrid,
-                    self.offset_ms,
-                    self.sample_rate,
-                    self.frame_stride
+                self.seq_states[corrid] = FeatStream(
+                    corrid=corrid,
+                    sample_rate=self.sample_rate,
+                    offset_ms=self.offset_ms,
+                    frame_stride=self.frame_stride
                 )
-            if ready:
-                self.seq_feat[corrid].add_audio(wav)
-            batch_seqid.append(corrid)
-            if end:
-                end_seqid[corrid] = 1
-            wav = self.seq_feat[corrid].get_seg_wav() * 32768
-            np.concatenate([total_waves, wav])
-        self.fbank.accept_waveform(16000, total_waves.tolist())
 
-        for corrid, frames in zip(batch_seqid, features):
-            self.seq_feat[corrid].add_frames(frames)
-            speech = self.seq_feat[corrid].get_frames(self.decoding_window)
-            out_tensor0 = pb_utils.Tensor("speech", torch.unsqueeze(speech, 0).to("cpu").numpy())
-            output_tensors = [out_tensor0]
-            response = pb_utils.InferenceResponse(output_tensors=output_tensors)
-            responses.append(response)
-            if corrid in end_seqid:
-                del self.seq_feat[corrid]
+            stream = self.seq_states[corrid]
+
+            if ready:
+                stream.add_wavs(wav)
+
+            chunk = stream.pop_chunk(self.chunk_size_samples)
+
+            fb = knf.OnlineFbank(self.fbank_opts)
+            fb.accept_waveform(self.sample_rate, chunk)
+
+            # pull all available frames
+            frames = []
+            while fb.num_frames_ready > 0:
+                f = fb.get_frame(0)
+                # move the buffer forward inside OnlineFbank
+                fb.pop_frame()
+                frames.append(f)
+
+            frames = np.stack(frames, axis=0) if frames else np.zeros((0, self.feature_dim), np.float32)
+
+            # append frames to stream buffer
+            if len(frames) > 0:
+                stream.add_frames(frames)
+
+            # try pop one fixed window
+            seg = stream.pop_window(self.win_size)
+
+            if seg is None:
+                seg = np.zeros((self.win_size, self.feature_dim), np.float32)
+
+            out = pb_utils.Tensor("speech", seg.reshape(1, self.win_size, self.feature_dim))
+            responses.append(pb_utils.InferenceResponse(output_tensors=[out]))
+
+            # cleanup
+            if end:
+                del self.seq_states[corrid]
         return responses
 
     def finalize(self):

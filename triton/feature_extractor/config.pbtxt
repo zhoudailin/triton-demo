@@ -6,10 +6,6 @@ parameters [
   {
     key: "chunk_size_s",
     value: { string_value: "0.6" }
-  },
-  {
-    key: "config_path"
-    value: { string_value: "model/feature_extractor/config.yaml" }
   }
 ]
 
