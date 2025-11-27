@@ -38,7 +38,9 @@ class CpuStreamingFbank:
             (chunk_stride / self.sample_rate * 1000) // opts.frame_opts.frame_shift_ms
         )
         self.window_size = self.frame_stride + 1
-        offset_ms = _calc_offset_ms(opts.frame_opts.frame_length_ms, opts.frame_opts.frame_shift_ms)
+        offset_ms = _calc_offset_ms(
+            opts.frame_opts.frame_length_ms, opts.frame_opts.frame_shift_ms
+        )
         self.offset_samples = int(offset_ms / 1000 * self.sample_rate)
         self.audio_cache = np.zeros(0, dtype=np.float32)
         self.frame_cache = np.zeros((0, opts.mel_opts.num_bins), dtype=np.float32)
@@ -46,9 +48,15 @@ class CpuStreamingFbank:
     def process_chunk(self, chunk: np.ndarray) -> List[np.ndarray]:
         """处理单个 chunk，返回若干个 61x80 的窗口。"""
         chunk = self._pad_chunk(chunk.astype(np.float32))
-        seg = np.concatenate([self.audio_cache, chunk]) if self.audio_cache.size else chunk
+        seg = (
+            np.concatenate([self.audio_cache, chunk])
+            if self.audio_cache.size
+            else chunk
+        )
         self.audio_cache = (
-            seg[-self.offset_samples :].copy() if self.offset_samples > 0 and seg.size else np.zeros(0, dtype=np.float32)
+            seg[-self.offset_samples :].copy()
+            if self.offset_samples > 0 and seg.size
+            else np.zeros(0, dtype=np.float32)
         )
         if seg.size == 0:
             return []
@@ -80,7 +88,9 @@ class CpuStreamingFbank:
         return padded
 
 
-def sliding_windows(feats: np.ndarray, window_size: int, stride: int) -> List[np.ndarray]:
+def sliding_windows(
+    feats: np.ndarray, window_size: int, stride: int
+) -> List[np.ndarray]:
     """根据整段特征切出窗口，作为 funASR/funasr 前端的参考。"""
     windows = []
     start = 0
@@ -119,7 +129,9 @@ def main():
     streaming_windows.extend(extractor.flush())
 
     reference_feats = _extract_fbank_frames(padded_wave * (1 << 15), opts)
-    reference_windows = sliding_windows(reference_feats, extractor.window_size, extractor.frame_stride)
+    reference_windows = sliding_windows(
+        reference_feats, extractor.window_size, extractor.frame_stride
+    )
 
     assert len(streaming_windows) == len(reference_windows), (
         f"stream windows={len(streaming_windows)}, ref windows={len(reference_windows)}"
@@ -129,7 +141,9 @@ def main():
         float(np.max(np.abs(a - b)))
         for a, b in zip(streaming_windows, reference_windows)
     ]
-    print(f"chunk windows: {len(streaming_windows)}  window_shape={streaming_windows[0].shape}")
+    print(
+        f"chunk windows: {len(streaming_windows)}  window_shape={streaming_windows[0].shape}"
+    )
     print(f"max abs diff vs funasr reference: {max(diffs):.6f}")
     print(f"mean abs diff: {np.mean(diffs):.6f}")
 

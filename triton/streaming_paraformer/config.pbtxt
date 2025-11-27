@@ -12,16 +12,21 @@ input [
 
 output [
   {
-    name: "speech"
+    name: "chunk_xs_out"
     data_type: TYPE_FP32
-    dims: [61, 80]
+    dims: [-1, 560]
+  },
+  {
+    name: "chunk_xs_out_len"
+    data_type: TYPE_INT32
+    dims: [-1]
   }
 ]
 
 ensemble_scheduling {
   step [
     {
-      model_name: "feature_extractor"
+      model_name: "fbank_extractor"
       model_version: -1
       input_map {
         key: "wav"
@@ -31,23 +36,23 @@ ensemble_scheduling {
         key: "speech"
         value: "speech"
       }
+    },
+    {
+      model_name: "lfr_cmvn_pe"
+      model_version: -1
+      input_map {
+        key: "chunk_xs"
+        value: "speech"
+      },
+      output_map {
+        key: "chunk_xs_out"
+        value: "chunk_xs_out"
+      }
+      output_map {
+        key: "chunk_xs_out_len"
+        value: "chunk_xs_out_len"
+      }
     }
-    #    {
-    #      model_name: "lfr_cmvn_pe"
-    #      model_version: -1
-    #      input_map {
-    #        key: "chunk_xs"
-    #        value: "speech"
-    #      }
-    #      output_map {
-    #        key: "chunk_xs_out"
-    #        value: "chunk_xs_out"
-    #      }
-    #      output_map {
-    #        key: "chunk_xs_out_len"
-    #        value: "chunk_xs_out_len"
-    #      }
-    #    },
     #    {
     #      model_name: "encoder"
     #      model_version: -1

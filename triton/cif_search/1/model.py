@@ -41,12 +41,20 @@ class CIFSearch:
         cache_alphas = []
         cache_hiddens = []
         alphas[:, : self.chunk_size[0]] = 0.0
-        alphas[:, sum(self.chunk_size[:2]):] = 0.0
+        alphas[:, sum(self.chunk_size[:2]) :] = 0.0
 
-        if self.cache is not None and "cif_alphas" in self.cache and "cif_hidden" in self.cache:
+        if (
+            self.cache is not None
+            and "cif_alphas" in self.cache
+            and "cif_hidden" in self.cache
+        ):
             hidden = np.concatenate((self.cache["cif_hidden"], hidden), axis=1)
             alphas = np.concatenate((self.cache["cif_alphas"], alphas), axis=1)
-        if self.cache is not None and "last_chunk" in self.cache and self.cache["last_chunk"]:
+        if (
+            self.cache is not None
+            and "last_chunk" in self.cache
+            and self.cache["last_chunk"]
+        ):
             tail_hidden = np.zeros((batch_size, 1, hidden_size)).astype(np.float32)
             tail_alphas = np.array([[self.tail_threshold]]).astype(np.float32)
             tail_alphas = np.tile(tail_alphas, (batch_size, 1))
@@ -86,7 +94,9 @@ class CIFSearch:
         max_token_len = max(token_length)
         list_ls = []
         for b in range(batch_size):
-            pad_frames = np.zeros((max_token_len - token_length[b], hidden_size)).astype(np.float32)
+            pad_frames = np.zeros(
+                (max_token_len - token_length[b], hidden_size)
+            ).astype(np.float32)
             if token_length[b] == 0:
                 list_ls.append(pad_frames)
             else:
@@ -97,9 +107,9 @@ class CIFSearch:
         self.cache["cif_hidden"] = np.stack(cache_hiddens, axis=0)
         self.cache["cif_hidden"] = np.expand_dims(self.cache["cif_hidden"], axis=0)
 
-        return np.stack(list_ls, axis=0).astype(np.float32), np.stack(token_length, axis=0).astype(
-            np.int32
-        )
+        return np.stack(list_ls, axis=0).astype(np.float32), np.stack(
+            token_length, axis=0
+        ).astype(np.int32)
 
 
 class TritonPythonModel:
@@ -172,7 +182,9 @@ class TritonPythonModel:
                 self.cif_search_cache[corrid].cache["last_chunk"] = True
 
             try:
-                acoustic, acoustic_len = self.cif_search_cache[corrid].infer(hidden, alphas)
+                acoustic, acoustic_len = self.cif_search_cache[corrid].infer(
+                    hidden, alphas
+                )
                 batch_result[corrid] = ""
                 if acoustic.shape[1] == 0:
                     continue
@@ -186,7 +198,9 @@ class TritonPythonModel:
             input_tensor0 = pb_utils.Tensor("enc", hidden.astype(np.float32))
             # hidden_len已经是标量，直接使用
             input_tensor1 = pb_utils.Tensor("enc_len", hidden_len.astype(np.int32))
-            input_tensor2 = pb_utils.Tensor("acoustic_embeds", acoustic.astype(np.float32))
+            input_tensor2 = pb_utils.Tensor(
+                "acoustic_embeds", acoustic.astype(np.float32)
+            )
             input_tensor3 = pb_utils.Tensor(
                 "acoustic_embeds_len", acoustic_len.astype(np.int32)
             )
@@ -219,21 +233,29 @@ class TritonPythonModel:
                 try:
                     response = await future
                     if response.has_error():
-                        print(f"Inference failed for qualified_corrid[{i}] {qualified_corrid[i]}: {response.error().message()}")
+                        print(
+                            f"Inference failed for qualified_corrid[{i}] {qualified_corrid[i]}: {response.error().message()}"
+                        )
                         inference_responses.append(None)
                     else:
                         inference_responses.append(response)
                 except Exception as e:
-                    print(f"Async inference error for qualified_corrid[{i}] {qualified_corrid[i]}: {e}")
+                    print(
+                        f"Async inference error for qualified_corrid[{i}] {qualified_corrid[i]}: {e}"
+                    )
                     inference_responses.append(None)
 
-        for index_corrid, inference_response in zip(qualified_corrid, inference_responses):
+        for index_corrid, inference_response in zip(
+            qualified_corrid, inference_responses
+        ):
             if inference_response is None:
                 print(f"Skipping corrid {index_corrid} due to inference failure")
                 continue
 
             try:
-                sample_ids = pb_utils.get_output_tensor_by_name(inference_response, "sample_ids")
+                sample_ids = pb_utils.get_output_tensor_by_name(
+                    inference_response, "sample_ids"
+                )
                 token_ids = sample_ids.as_numpy()[0]
                 # 确保token_ids在词汇表范围内
                 tokens = []
@@ -243,9 +265,13 @@ class TritonPythonModel:
                     else:
                         print(f"Warning: token_id {token_id} not in vocab")
                 batch_result[index_corrid] = "".join(tokens)
-                print(f"Generated text for corrid {index_corrid}: {batch_result[index_corrid]}")
+                print(
+                    f"Generated text for corrid {index_corrid}: {batch_result[index_corrid]}"
+                )
             except Exception as e:
-                print(f"Error processing inference response for corrid {index_corrid}: {e}")
+                print(
+                    f"Error processing inference response for corrid {index_corrid}: {e}"
+                )
                 continue
 
         for i, index_corrid in enumerate(batch_corrid):
