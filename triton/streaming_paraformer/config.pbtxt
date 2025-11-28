@@ -12,14 +12,9 @@ input [
 
 output [
   {
-    name: "chunk_xs_out"
-    data_type: TYPE_FP32
-    dims: [-1, 560]
-  },
-  {
-    name: "chunk_xs_out_len"
-    data_type: TYPE_INT32
-    dims: [-1]
+    name: "transcripts"
+    data_type: TYPE_STRING
+    dims: [1]
   }
 ]
 
@@ -52,50 +47,50 @@ ensemble_scheduling {
         key: "chunk_xs_out_len"
         value: "chunk_xs_out_len"
       }
+    },
+    {
+      model_name: "encoder"
+      model_version: -1
+      input_map {
+        key: "speech"
+        value: "chunk_xs_out"
+      }
+      input_map {
+        key: "speech_lengths"
+        value: "chunk_xs_out_len"
+      }
+      output_map {
+        key: "enc"
+        value: "enc"
+      }
+      output_map {
+        key: "enc_len"
+        value: "enc_len"
+      }
+      output_map {
+        key: "alphas"
+        value: "alphas"
+      }
+    },
+    {
+      model_name: "cif_search"
+      model_version: -1
+      input_map {
+        key: "enc"
+        value: "enc"
+      }
+      input_map{
+        key: "enc_len"
+        value: "enc_len"
+      }
+      input_map{
+        key: "alphas"
+        value: "alphas"
+      }
+      output_map {
+        key: "transcripts"
+        value: "transcripts"
+      }
     }
-    #    {
-    #      model_name: "encoder"
-    #      model_version: -1
-    #      input_map {
-    #        key: "speech"
-    #        value: "chunk_xs_out"
-    #      }
-    #      input_map {
-    #        key: "speech_lengths"
-    #        value: "chunk_xs_out_len"
-    #      }
-    #      output_map {
-    #        key: "enc"
-    #        value: "enc"
-    #      }
-    #      output_map {
-    #        key: "enc_len"
-    #        value: "enc_len"
-    #      }
-    #      output_map {
-    #        key: "alphas"
-    #        value: "alphas"
-    #      }
-    #    },
-    #    {
-    #      model_name: "cif_search"
-    #      model_version: -1
-    #      input_map {
-    #        key: "enc"
-    #        value: "enc"
-    #      }
-    #      input_map{
-    #        key: "enc_len"
-    #        value: "enc_len"
-    #      }
-    #      input_map{
-    #        key: "alphas"
-    #        value: "alphas"
-    #      }
-    #      output_map {
-    #        key: "transcripts"
-    #        value: "transcripts"
-    #      }
-    #    }
   ]
 }

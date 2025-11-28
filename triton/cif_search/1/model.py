@@ -1,11 +1,10 @@
 import asyncio
 import json
+import traceback
 from collections import OrderedDict
 
 import numpy as np
 import triton_python_backend_utils as pb_utils
-import yaml
-from torch.utils.dlpack import from_dlpack
 
 
 class LimitedDict(OrderedDict):
@@ -41,19 +40,19 @@ class CIFSearch:
         cache_alphas = []
         cache_hiddens = []
         alphas[:, : self.chunk_size[0]] = 0.0
-        alphas[:, sum(self.chunk_size[:2]) :] = 0.0
+        alphas[:, sum(self.chunk_size[:2]):] = 0.0
 
         if (
-            self.cache is not None
-            and "cif_alphas" in self.cache
-            and "cif_hidden" in self.cache
+                self.cache is not None
+                and "cif_alphas" in self.cache
+                and "cif_hidden" in self.cache
         ):
             hidden = np.concatenate((self.cache["cif_hidden"], hidden), axis=1)
             alphas = np.concatenate((self.cache["cif_alphas"], alphas), axis=1)
         if (
-            self.cache is not None
-            and "last_chunk" in self.cache
-            and self.cache["last_chunk"]
+                self.cache is not None
+                and "last_chunk" in self.cache
+                and self.cache["last_chunk"]
         ):
             tail_hidden = np.zeros((batch_size, 1, hidden_size)).astype(np.float32)
             tail_alphas = np.array([[self.tail_threshold]]).astype(np.float32)
@@ -138,15 +137,17 @@ class TritonPythonModel:
         print(f"Loading vocab from: {vocab_file}")
         try:
             with open(str(vocab_file), "rb") as f:
-                config = yaml.load(f, Loader=yaml.Loader)
+                config = json.loads(f.read())
+            print(f'config: {config}')
             vocab_list = config["token_list"]
             print(f"Loaded vocab with {len(vocab_list)} tokens")
             return vocab_list
         except Exception as e:
+            traceback.print_exc()
             print(f"Error loading vocab: {e}")
             return {}
 
-    async def execute(self, requests):
+    def execute(self, requests):
         print(f"CIF Search execute: received {len(requests)} requests")
         batch_end = []
         responses = []
@@ -163,17 +164,18 @@ class TritonPythonModel:
             hidden_len = pb_utils.get_input_tensor_by_name(request, "enc_len")
             hidden_len = hidden_len.as_numpy()
 
-            in_start = pb_utils.get_input_tensor_by_name(request, "START")
-            start = in_start.as_numpy()[0][0]
-
-            in_corrid = pb_utils.get_input_tensor_by_name(request, "CORRID")
-            corrid = in_corrid.as_numpy()[0][0]
-
-            in_end = pb_utils.get_input_tensor_by_name(request, "END")
-            end = in_end.as_numpy()[0][0]
+            # 状态维护
+            start = pb_utils.get_input_tensor_by_name(request, "START").as_numpy()[0][0]
+            ready = pb_utils.get_input_tensor_by_name(request, "READY").as_numpy()[0][0]
+            corrid = pb_utils.get_input_tensor_by_name(request, "CORRID").as_numpy()[0][
+                0
+            ]
+            end = pb_utils.get_input_tensor_by_name(request, "END").as_numpy()[0][0]
 
             batch_end.append(end)
             batch_corrid.append(corrid)
+
+            print(start, ready, corrid, end)
 
             if start:
                 self.cif_search_cache[corrid] = CIFSearch()
@@ -185,6 +187,7 @@ class TritonPythonModel:
                 acoustic, acoustic_len = self.cif_search_cache[corrid].infer(
                     hidden, alphas
                 )
+                print('##################### ', acoustic, acoustic_len, acoustic.shape[1])
                 batch_result[corrid] = ""
                 if acoustic.shape[1] == 0:
                     continue
@@ -204,6 +207,7 @@ class TritonPythonModel:
             input_tensor3 = pb_utils.Tensor(
                 "acoustic_embeds_len", acoustic_len.astype(np.int32)
             )
+            print([hidden, hidden_len, acoustic, acoustic_len])
             input_tensors = [input_tensor0, input_tensor1, input_tensor2, input_tensor3]
 
             if self.start[corrid] and end:
@@ -224,14 +228,20 @@ class TritonPythonModel:
                 correlation_id=corrid,
                 flags=flag,
             )
-            inference_response_awaits.append(inference_request.async_exec())
+            inference_response = inference_request.exec()
+            logits = pb_utils.get_output_tensor_by_name(
+                inference_response, 'logits')
+            sample_ids = pb_utils.get_output_tensor_by_name(
+                inference_response, 'sample_ids')
+            print(f'inference_response: {logits} {sample_ids}')
 
         inference_responses = []
         if inference_response_awaits:
             # 修复异步调用问题
             for i, future in enumerate(inference_response_awaits):
                 try:
-                    response = await future
+                    response = future
+                    print('response: ', response)
                     if response.has_error():
                         print(
                             f"Inference failed for qualified_corrid[{i}] {qualified_corrid[i]}: {response.error().message()}"
@@ -246,7 +256,7 @@ class TritonPythonModel:
                     inference_responses.append(None)
 
         for index_corrid, inference_response in zip(
-            qualified_corrid, inference_responses
+                qualified_corrid, inference_responses
         ):
             if inference_response is None:
                 print(f"Skipping corrid {index_corrid} due to inference failure")
@@ -256,6 +266,7 @@ class TritonPythonModel:
                 sample_ids = pb_utils.get_output_tensor_by_name(
                     inference_response, "sample_ids"
                 )
+                print('sample_ids: ', sample_ids)
                 token_ids = sample_ids.as_numpy()[0]
                 # 确保token_ids在词汇表范围内
                 tokens = []
