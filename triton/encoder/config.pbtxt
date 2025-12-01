@@ -1,6 +1,6 @@
 name: "encoder"
 backend: "onnxruntime"
-default_model_filename: "model_quant.onnx"
+default_model_filename: "model.onnx"
 
 max_batch_size: 128
 

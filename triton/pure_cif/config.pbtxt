@@ -1,0 +1,52 @@
+name: "pure_cif"
+backend: "python"
+max_batch_size: 0
+
+parameters [
+  {
+    key: "vocabulary"
+    value: { string_value: "/workspace/model/cif_search/tokens.json" }
+  },
+  {
+    key: "FORCE_CPU_ONLY_INPUT_TENSORS"
+    value: { string_value: "yes" }
+  }
+]
+
+input [
+  {
+    name: "enc"
+    data_type: TYPE_FP32
+    dims: [ -1, 512 ]
+  },
+  {
+    name: "enc_len"
+    data_type: TYPE_INT32
+    dims: [1]
+  },
+  {
+    name: "acoustic_embeds"
+    data_type: TYPE_FP32
+    dims: [ -1, 512 ]
+  },
+  {
+    name: "acoustic_embeds_len"
+    data_type: TYPE_INT32
+    dims: [1]
+  }
+]
+
+output [
+  {
+    name: "transcripts"
+    data_type: TYPE_STRING
+    dims: [1]
+  }
+]
+
+instance_group [
+  {
+    kind: KIND_GPU
+    count: 1
+  }
+]

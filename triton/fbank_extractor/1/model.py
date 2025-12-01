@@ -114,9 +114,16 @@ class TritonPythonModel:
             wav = self.queue_states[corrid].get_seg_wav()
             wave_batch.append(wav)
             fbank_features = self.fbank(wave_batch)
+            print(
+                "fbank batch shapes:",
+                [tuple(feat.shape) for feat in fbank_features],
+            )
             for corrid, frames in zip(corrid_index, fbank_features):
                 self.queue_states[corrid].add_frames(frames)
             speech = self.queue_states[corrid].get_frames()
+            print(
+                f"output speech shape for corrid {corrid}: {tuple(speech.shape)}"
+            )
 
             out_tensor_speech = pb_utils.Tensor("speech", torch.unsqueeze(speech, 0).to("cpu").numpy())
             output_tensors = [out_tensor_speech]

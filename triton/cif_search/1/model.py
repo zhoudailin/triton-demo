@@ -152,9 +152,7 @@ class TritonPythonModel:
         batch_end = []
         responses = []
         batch_corrid = []
-        qualified_corrid = []
         batch_result = {}
-        inference_response_awaits = []
 
         for request in requests:
             hidden = pb_utils.get_input_tensor_by_name(request, "enc")
@@ -196,16 +194,17 @@ class TritonPythonModel:
                 batch_result[corrid] = ""
                 continue
 
-            qualified_corrid.append(corrid)
             # 修复数据类型和形状问题
             input_tensor0 = pb_utils.Tensor("enc", hidden.astype(np.float32))
             # hidden_len已经是标量，直接使用
-            input_tensor1 = pb_utils.Tensor("enc_len", hidden_len.astype(np.int32))
+            hidden_len_tensor = hidden_len.astype(np.int32).reshape(-1, 1)
+            input_tensor1 = pb_utils.Tensor("enc_len", hidden_len_tensor)
             input_tensor2 = pb_utils.Tensor(
                 "acoustic_embeds", acoustic.astype(np.float32)
             )
+            acoustic_len_tensor = acoustic_len.astype(np.int32).reshape(-1, 1)
             input_tensor3 = pb_utils.Tensor(
-                "acoustic_embeds_len", acoustic_len.astype(np.int32)
+                "acoustic_embeds_len", acoustic_len_tensor
             )
             print([hidden, hidden_len, acoustic, acoustic_len])
             input_tensors = [input_tensor0, input_tensor1, input_tensor2, input_tensor3]
@@ -229,61 +228,35 @@ class TritonPythonModel:
                 flags=flag,
             )
             inference_response = inference_request.exec()
-            logits = pb_utils.get_output_tensor_by_name(
-                inference_response, 'logits')
-            sample_ids = pb_utils.get_output_tensor_by_name(
-                inference_response, 'sample_ids')
-            print(f'inference_response: {logits} {sample_ids}')
-
-        inference_responses = []
-        if inference_response_awaits:
-            # 修复异步调用问题
-            for i, future in enumerate(inference_response_awaits):
-                try:
-                    response = future
-                    print('response: ', response)
-                    if response.has_error():
-                        print(
-                            f"Inference failed for qualified_corrid[{i}] {qualified_corrid[i]}: {response.error().message()}"
-                        )
-                        inference_responses.append(None)
-                    else:
-                        inference_responses.append(response)
-                except Exception as e:
-                    print(
-                        f"Async inference error for qualified_corrid[{i}] {qualified_corrid[i]}: {e}"
-                    )
-                    inference_responses.append(None)
-
-        for index_corrid, inference_response in zip(
-                qualified_corrid, inference_responses
-        ):
-            if inference_response is None:
-                print(f"Skipping corrid {index_corrid} due to inference failure")
+            if inference_response.has_error():
+                err_msg = inference_response.error().message()
+                print(f"Decoder failed for corrid {corrid}: {err_msg}")
+                batch_result[corrid] = ""
                 continue
 
             try:
                 sample_ids = pb_utils.get_output_tensor_by_name(
                     inference_response, "sample_ids"
                 )
-                print('sample_ids: ', sample_ids)
+                if sample_ids is None:
+                    print(f"Decoder response missing sample_ids for corrid {corrid}")
+                    batch_result[corrid] = ""
+                    continue
                 token_ids = sample_ids.as_numpy()[0]
-                # 确保token_ids在词汇表范围内
                 tokens = []
                 for token_id in token_ids:
-                    if int(token_id) in self.vocab_dict:
-                        tokens.append(self.vocab_dict[int(token_id)])
+                    idx = int(token_id)
+                    if 0 <= idx < len(self.vocab_dict):
+                        tokens.append(self.vocab_dict[idx])
                     else:
                         print(f"Warning: token_id {token_id} not in vocab")
-                batch_result[index_corrid] = "".join(tokens)
+                batch_result[corrid] = "".join(tokens)
                 print(
-                    f"Generated text for corrid {index_corrid}: {batch_result[index_corrid]}"
+                    f"Generated text for corrid {corrid}: {batch_result[corrid]}"
                 )
             except Exception as e:
-                print(
-                    f"Error processing inference response for corrid {index_corrid}: {e}"
-                )
-                continue
+                print(f"Error processing decoder output for corrid {corrid}: {e}")
+                batch_result[corrid] = ""
 
         for i, index_corrid in enumerate(batch_corrid):
             sent = np.array([batch_result[index_corrid]])

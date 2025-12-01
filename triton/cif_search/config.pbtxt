@@ -53,6 +53,10 @@ parameters [
   {
     key: "tokens",
     value: { string_value: "model/cif_search/tokens.json" }
+  },
+  {
+    key: "FORCE_CPU_ONLY_INPUT_TENSORS"
+    value: { string_value: "yes" }
   }
 ]
 
