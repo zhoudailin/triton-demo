@@ -30,7 +30,7 @@ class TritonPythonModel:
     offset_ms: float
     offset: int
     sample_rate: int
-    queue_states: LRUDict
+    queue_states: Dict[str, Feat]
 
     def initialize(self, args):
         self.model_config = json.loads(args["model_config"])
