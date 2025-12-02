@@ -51,8 +51,8 @@ sequence_batching{
 
 parameters [
   {
-    key: "tokens",
-    value: { string_value: "model/cif_search/tokens.json" }
+    key: "vocabulary"
+    value: { string_value: "/workspace/model/cif_search/tokens.json" }
   },
   {
     key: "FORCE_CPU_ONLY_INPUT_TENSORS"

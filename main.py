@@ -58,5 +58,5 @@ for i in range(total_chunk_num):
         sequence_start=i == 0,
         sequence_end=i == total_chunk_num - 1,
     )
-    transcripts = response.as_numpy('transcripts')
+    transcripts = response.as_numpy('transcripts')[0].decode("utf-8")
     print('transcripts: ', transcripts)

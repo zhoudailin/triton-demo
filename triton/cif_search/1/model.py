@@ -126,26 +126,56 @@ class TritonPythonModel:
         self.cif_search_cache = LimitedDict(1024)
         self.start = LimitedDict(1024)
 
+    def _tensor_to_numpy(self, tensor):
+        """Safely convert Triton tensor that might live on GPU to numpy."""
+        if tensor is None:
+            return None
+        try:
+            return tensor.as_numpy()
+        except Exception:
+            try:
+                import torch  # lazy import to avoid hard dependency if not needed
+
+                return torch.utils.dlpack.from_dlpack(tensor.to_dlpack()).cpu().numpy()
+            except Exception:
+                traceback.print_exc()
+                return None
+
     def init_vocab(self, parameters):
-        for li in parameters.items():
-            key, value = li
-            value = value["string_value"]
-            if key == "vocabulary":
-                self.vocab_dict = self.load_vocab(value)
+        vocab_path = None
+        for key, value in parameters.items():
+            if key in ("vocabulary", "tokens"):
+                vocab_path = value["string_value"]
+                break
+
+        if vocab_path is None:
+            print("No vocabulary path provided in parameters.")
+            self.vocab_dict = []
+            return
+
+        self.vocab_dict = self.load_vocab(vocab_path)
 
     def load_vocab(self, vocab_file):
         print(f"Loading vocab from: {vocab_file}")
         try:
             with open(str(vocab_file), "rb") as f:
                 config = json.loads(f.read())
-            print(f'config: {config}')
-            vocab_list = config["token_list"]
+
+            # tokens.json 可能是 {"token_list": [...]} 或直接是列表
+            if isinstance(config, dict) and "token_list" in config:
+                vocab_list = config["token_list"]
+            elif isinstance(config, list):
+                vocab_list = config
+            else:
+                print(f"Unexpected vocab format, using empty list: {type(config)}")
+                vocab_list = []
+
             print(f"Loaded vocab with {len(vocab_list)} tokens")
             return vocab_list
         except Exception as e:
             traceback.print_exc()
             print(f"Error loading vocab: {e}")
-            return {}
+            return []
 
     def execute(self, requests):
         print(f"CIF Search execute: received {len(requests)} requests")
@@ -238,11 +268,12 @@ class TritonPythonModel:
                 sample_ids = pb_utils.get_output_tensor_by_name(
                     inference_response, "sample_ids"
                 )
-                if sample_ids is None:
+                sample_ids_np = self._tensor_to_numpy(sample_ids)
+                if sample_ids_np is None:
                     print(f"Decoder response missing sample_ids for corrid {corrid}")
                     batch_result[corrid] = ""
                     continue
-                token_ids = sample_ids.as_numpy()[0]
+                token_ids = sample_ids_np[0]
                 tokens = []
                 for token_id in token_ids:
                     idx = int(token_id)

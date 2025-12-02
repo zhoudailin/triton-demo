@@ -3,6 +3,10 @@ import traceback
 
 import numpy as np
 import triton_python_backend_utils as pb_utils
+try:
+    import torch
+except ImportError:
+    torch = None
 
 
 class TritonPythonModel:
@@ -19,6 +23,22 @@ class TritonPythonModel:
         except Exception:
             traceback.print_exc()
             self.tokens = []
+
+    def _tensor_to_numpy(self, tensor):
+        if tensor is None:
+            return None
+        try:
+            return tensor.as_numpy()
+        except Exception:
+            # Some backends return GPU tensors; fall back to DLPack -> torch -> CPU.
+            if torch is None:
+                traceback.print_exc()
+                return None
+            try:
+                return torch.utils.dlpack.from_dlpack(tensor.to_dlpack()).cpu().numpy()
+            except Exception:
+                traceback.print_exc()
+                return None
 
     def execute(self, requests):
         responses = []
@@ -62,17 +82,19 @@ class TritonPythonModel:
                 logits = pb_utils.get_output_tensor_by_name(
                     inference_response, "logits"
                 )
+                sample_ids_np = self._tensor_to_numpy(sample_ids)
+                logits_np = self._tensor_to_numpy(logits)
                 print(
                     "decoder outputs: sample_ids shape",
-                    None if sample_ids is None else sample_ids.as_numpy().shape,
+                    None if sample_ids_np is None else sample_ids_np.shape,
                     "logits shape",
-                    None if logits is None else logits.as_numpy().shape,
+                    None if logits_np is None else logits_np.shape,
                 )
-                if sample_ids is None:
+                if sample_ids_np is None:
                     print("decoder returned None sample_ids")
                     transcript = ""
                 else:
-                    token_ids = sample_ids.as_numpy()[0]
+                    token_ids = sample_ids_np[0]
                     print("sample_ids array:", token_ids)
                     tokens = []
                     for tid in token_ids:

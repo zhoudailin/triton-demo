@@ -4,7 +4,8 @@ LABEL author="zhoudailin"
 
 WORKDIR /workspace
 
-RUN pip3 install jupyterlab torch==1.13.1 torchaudio==0.13.1
+RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
+    pip3 install jupyterlab torch==1.13.1 torchaudio==0.13.1
 
 COPY wheel /opt/app/wheel
 
