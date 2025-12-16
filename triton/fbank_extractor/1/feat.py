@@ -2,13 +2,13 @@ import torch
 
 
 class Feat(object):
-    def __init__(self, sample_rate: int, offset: int, frame_stride: int, window_size: int, device):
+    def __init__(self, sample_rate: int, offset: int, frame_stride: int, window_size: int):
         self.sample_rate = sample_rate
         self.offset = offset
         self.frame_stride = frame_stride
         self.window_size = window_size
 
-        self.wav = torch.tensor([], device=device)
+        self.wav = torch.tensor([])
         self.frames = None
         self.lfr_m = 7
 

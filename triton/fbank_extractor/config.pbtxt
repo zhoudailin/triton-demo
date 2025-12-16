@@ -7,7 +7,7 @@ sequence_batching{
   oldest {
     max_candidate_sequences: 1024
     preferred_batch_size: [32, 64, 128]
-    max_queue_delay_microseconds: 300000
+    max_queue_delay_microseconds: 50000
   }
   control_input [
     {
@@ -69,7 +69,7 @@ output [
 
 instance_group [
   {
-    count: 1
+    count: 4
     kind: KIND_CPU
   }
 ]

@@ -8,6 +8,7 @@ from typing import Dict, Literal
 from lru_dict import LRUDict
 from feat import Feat
 from torch.utils.dlpack import from_dlpack
+from fbank_model import FbankModel
 
 import triton_python_backend_utils as pb_utils
 
@@ -35,11 +36,6 @@ class TritonPythonModel:
     def initialize(self, args):
         self.model_config = json.loads(args["model_config"])
 
-        if "GPU" in self.model_config["instance_group"][0]["kind"]:
-            self.device = "cuda"
-        else:
-            self.device = "cpu"
-
         output_speech_config = pb_utils.get_output_config_by_name(self.model_config, "speech")
         self.window_size = output_speech_config["dims"][-2]
 
@@ -55,7 +51,7 @@ class TritonPythonModel:
         opts.frame_opts.frame_shift_ms = 10
 
         self.opts = opts
-        self.fbank = kaldifeat.Fbank(opts)
+        self.fbank = FbankModel(opts)
 
         sample_rate = opts.frame_opts.samp_freq
         frame_shift_ms = opts.frame_opts.frame_shift_ms
@@ -78,7 +74,6 @@ class TritonPythonModel:
         for request in requests:
             input_wav = pb_utils.get_input_tensor_by_name(request, "wav")
             wav = from_dlpack(input_wav.to_dlpack())[0]
-            print(f'wav shape: {wav.shape}')
             wav_len = len(wav)
             if wav_len < self.chunk_size:
                 temp = torch.zeros(self.chunk_size, dtype=torch.float32, device=self.device)
@@ -99,8 +94,7 @@ class TritonPythonModel:
                     sample_rate=self.sample_rate,
                     offset=self.offset,
                     frame_stride=self.frame_stride,
-                    window_size=self.window_size,
-                    device=self.device
+                    window_size=self.window_size
                 )
 
             if ready:
@@ -113,24 +107,26 @@ class TritonPythonModel:
             print(self.queue_states)
             wav = self.queue_states[corrid].get_seg_wav()
             wave_batch.append(wav)
-            fbank_features = self.fbank(wave_batch)
-            print(
-                "fbank batch shapes:",
-                [tuple(feat.shape) for feat in fbank_features],
-            )
-            for corrid, frames in zip(corrid_index, fbank_features):
-                self.queue_states[corrid].add_frames(frames)
+        fbank_features = self.fbank(wave_batch)
+        print(
+            "fbank batch shapes:",
+            [tuple(feat.shape) for feat in fbank_features],
+        )
+        for corrid, frames in zip(corrid_index, fbank_features):
+            self.queue_states[corrid].add_frames(frames)
             speech = self.queue_states[corrid].get_frames()
             print(
                 f"output speech shape for corrid {corrid}: {tuple(speech.shape)}"
             )
 
-            out_tensor_speech = pb_utils.Tensor("speech", torch.unsqueeze(speech, 0).to("cpu").numpy())
+            out_tensor_speech = pb_utils.Tensor("speech", torch.unsqueeze(speech, 0).numpy())
             output_tensors = [out_tensor_speech]
             response = pb_utils.InferenceResponse(output_tensors=output_tensors)
             responses.append(response)
 
-            if corrid in end_corrid_set:
+        # 清理已结束的corrid状态
+        for corrid in end_corrid_set:
+            if corrid in self.queue_states:
                 del self.queue_states[corrid]
 
         return responses
