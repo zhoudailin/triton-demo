@@ -76,7 +76,7 @@ class TritonPythonModel:
             wav = from_dlpack(input_wav.to_dlpack())[0]
             wav_len = len(wav)
             if wav_len < self.chunk_size:
-                temp = torch.zeros(self.chunk_size, dtype=torch.float32, device=self.device)
+                temp = torch.zeros(self.chunk_size, dtype=torch.float32)
                 print('chunk_size: ', self.chunk_size)
                 temp[0:wav_len] = wav[:]
                 wav = temp
